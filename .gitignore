@@ -1,6 +1,10 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,linux,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,linux,windows
 
+### Project-specific ###
+secrets.toml
+secrets.*.toml
+
 ### Linux ###
 *~
 
