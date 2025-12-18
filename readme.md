@@ -29,3 +29,9 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20])"
 python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20].lower())"
 ```
+
+## Docker utilities
+
+```bash
+docker run -it --rm -v datashare_media:/datashare_media -v ${MOUNTED_DATA_DISK}/jetforge/www/:/datashare_mounted busybox
+```
