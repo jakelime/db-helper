@@ -5,6 +5,8 @@ database and db_user accounts.
 
 ## Quickstart for MongoDB
 
+1. `pip install -r requirements.txt -i https://artifact.stengglink.com/repository/pypi-proxy/simple`
+
 1. [For the first time] Run the script. `python mongodb.py`.
 
    - This will generate the `secrets.toml` file.
