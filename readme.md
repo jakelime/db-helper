@@ -34,4 +34,8 @@ python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_
 
 ```bash
 docker run -it --rm -v datashare_media:/datashare_media -v ${MOUNTED_DATA_DISK}/jetforge/www/:/datashare_mounted busybox
+
+docker run -it -v jetforge-docker_datashare_media:/datashare_media -v /mnt/disks/common_data_01/www/:/datashare_mounted artifact.xxx.com:xxxxx/busybox
+
+docker run -it -v jetforge-docker_datashare_media:/datashare_media -v /mnt/disks/common_data_01/www/:/datashare_mounted --network jetforge-docker_jf_net artifact.xxx.com:xxx/ubuntu
 ```
