@@ -19,3 +19,11 @@ database and db_user accounts.
    - You can create any number of databases.
    - You can create any number of users, users are subset of the databases to be
      created in the database itself.
+
+## Helper functions
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20])"
+python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20].lower())"
+```
