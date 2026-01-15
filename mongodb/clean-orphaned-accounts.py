@@ -1,10 +1,102 @@
+import logging
+import sys
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Self
+from urllib.parse import urlparse
+
+import pymongo as pymg
+import tomlkit
 from pymongo import MongoClient
+from pymongo import errors as pymgErrors
+from pymongo.write_concern import WriteConcern
 
-# 1. Connect to MongoDB (ensure your user has admin privileges)
-client = MongoClient("mongodb://adminUser:password@localhost:27017/?authSource=admin")
+
+def setup_basic_stream_logging():
+    logging.basicConfig(
+        # format="%(levelname)s:%(asctime)s:%(name)s: %(message)s",
+        format="%(levelname)s:%(name)s: %(message)s",
+        level=logging.INFO,
+        # level=logging.DEBUG,
+        stream=sys.stdout,
+    )
 
 
-def cleanup_orphaned_users():
+setup_basic_stream_logging()
+lg = logging.getLogger()
+CONFIG_FILE = Path(__file__).parent / "secrets.toml"
+DEFAULT_CONFIG = {
+    "core": {
+        "MONGODB_URI": "mongodb://root:myNotVerySecretPassword@localhost:27017/",
+    },
+}
+
+
+class ConfigHelper:
+    default_config: dict = DEFAULT_CONFIG
+    config: dict = {}
+
+    def __init__(self, filepath: Path = CONFIG_FILE):
+        self.filepath = filepath
+        if not filepath.exists():
+            lg.info("Configuration file not found.")
+            lg.info("Writing default configuration..")
+            self.write_config(self.default_config)
+
+        # Load config, fallback to default if it fails
+        loaded_config = self.load_config()
+        self.config = (
+            loaded_config if loaded_config is not None else self.default_config
+        )
+
+    def load_config(self) -> dict | None:
+        """
+        Reads configuration using tomlkit.
+        """
+        try:
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                # tomlkit.load returns a MutableMapping (dict-like) object
+                config = tomlkit.load(f)
+            lg.debug("Configuration loaded successfully.")
+            return config
+        except Exception as e:
+            lg.error(f"File read error in {self.filepath}: {e}")
+            lg.warning("Using default configuration...")
+            return None
+
+    def write_config(self, config: dict) -> None:
+        """
+        Writes configuration using tomlkit.dump().
+        This handles all nested lists, types, and escaping automatically.
+        """
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                tomlkit.dump(config, f)
+            lg.info("Configuration written successfully.")
+        except Exception as e:
+            lg.error(f"Error writing configuration file: {e}")
+            raise e
+
+    def validate_config(self) -> Self:
+        cfg = self.config
+        try:
+            _ = cfg["core"]
+        except tomlkit.exceptions.NonExistentKey:
+            raise ValueError("Error in config: 'core' key is missing.")
+        return self
+
+
+def main():
+    helper = ConfigHelper()
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+    client = MongoClient(CORE["MONGODB_URI"])
+    cleanup_orphaned_users(client)
+
+
+def cleanup_orphaned_users(client):
     # 2. Get list of all current active databases
     active_dbs = set(client.list_database_names())
     print(f"Active databases: {active_dbs}")
@@ -51,4 +143,4 @@ def cleanup_orphaned_users():
 
 
 if __name__ == "__main__":
-    cleanup_orphaned_users()
+    main()
