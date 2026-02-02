@@ -26,8 +26,17 @@ database and db_user accounts.
 
 ```bash
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
-python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20])"
-python -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(15)).decode('utf-8').replace('-', '').replace('_', '').strip('=')[:20].lower())"
+
+# Generates a secured secret key for use as password of 1+21 char in length
+# The first char is always a letter, no dash and underscore for easy copypaste and url-safe.
+## 22 chars password
+python -c "import secrets, string; alph = string.ascii_letters + string.digits; print(secrets.choice(string.ascii_letters) + ''.join(secrets.choice(alph) for _ in range(21)))"
+## 32 chars password
+python -c "import secrets, string; alph = string.ascii_letters + string.digits; print(secrets.choice(string.ascii_letters) + ''.join(secrets.choice(alph) for _ in range(31)))"
+
+# Generates a secret key
+## 32 chars
+python -c "import secrets; print(secrets.token_urlsafe(32)[:32])"
 ```
 
 ## Docker utilities
