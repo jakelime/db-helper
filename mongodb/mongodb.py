@@ -35,7 +35,7 @@ def setup_basic_stream_logging():
 
 setup_basic_stream_logging()
 lg = logging.getLogger()
-CONFIG_FILE = Path(__file__).parent / "secrets.toml"
+CONFIG_FILE = Path(__file__).parent / "secrets.mongodb.toml"
 DEFAULT_CONFIG = {
     "core": {
         "MONGODB_URI": "mongodb://root:tzX4PtqOZSMsDDj3ikxU@localhost:27017/",
