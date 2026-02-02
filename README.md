@@ -22,6 +22,30 @@ database and db_user accounts.
    - You can create any number of users, users are subset of the databases to be
      created in the database itself.
 
+## Known Issues
+
+Postgres helper is alot more complex than this simple implementation.
+
+1. Postgres users are not created and stored in the same database.
+1. Postgres user permissions can be tuned to table levels. For example;
+   if you created tables `[Table0, Table1, Table2]` when the
+   user is first created, then create `Table3`. The user will not by
+   default be granted permissions to `Table4`.
+1. A more straightforward approach would be simply using `dbOwner`
+   role to the application account. However, this would not satisfy
+   the Principle of Least Privilege in cybersecurity.
+1. There are various workarounds, such as initializing the app using
+   `dbOwner`, then downgrade the connection string to `read, write` only.
+
+   [**TODO**] OR, workout exactly all the SQL commands required to satisfy complexities
+   from Postgres.
+
+   - Grant RW permissions and all future permissions to all tables
+   - Grant CREATE table permissions
+   - Grant user access to the database only
+   - Take care not to allow table name modifications,
+     and/or delete operations.
+
 ## Helper functions
 
 ```bash
