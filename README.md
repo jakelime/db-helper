@@ -5,7 +5,7 @@ database and db_user accounts.
 
 ## Quickstart for MongoDB
 
-1. `pip install -r requirements.txt -i https://artifact.stengglink.com/repository/pypi-proxy/simple`
+1. `pip install -r requirements.txt -i https://artifact.privaterepo.com/repository/pypi-proxy/simple`
 
 1. [For the first time] Run the script. `python mongodb.py`.
 
@@ -37,14 +37,4 @@ python -c "import secrets, string; alph = string.ascii_letters + string.digits; 
 # Generates a secret key
 ## 32 chars
 python -c "import secrets; print(secrets.token_urlsafe(32)[:32])"
-```
-
-## Docker utilities
-
-```bash
-docker run -it --rm -v datashare_media:/datashare_media -v ${MOUNTED_DATA_DISK}/jetforge/www/:/datashare_mounted busybox
-
-docker run -it -v jetforge-docker_datashare_media:/datashare_media -v /mnt/disks/common_data_01/www/:/datashare_mounted artifact.xxx.com:xxxxx/busybox
-
-docker run -it -v jetforge-docker_datashare_media:/datashare_media -v /mnt/disks/common_data_01/www/:/datashare_mounted --network jetforge-docker_jf_net artifact.xxx.com:xxx/ubuntu
 ```
