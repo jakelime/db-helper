@@ -28,7 +28,7 @@ def setup_basic_stream_logging():
 
 setup_basic_stream_logging()
 lg = logging.getLogger("pg_helper")
-CONFIG_FILE = Path(__file__).parent / "secrets-mongodb.toml"
+CONFIG_FILE = Path(__file__).parent / "secrets.postgres.toml"
 
 # Default configuration mirroring the requirements
 DEFAULT_CONFIG = {
