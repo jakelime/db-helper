@@ -450,6 +450,24 @@ def run_setup(args):
     lg.info("All database operations completed successfully.")
 
 
+def run_init(args):
+    """Initialize the configuration file via CLI command"""
+    filepath = args.config
+    if filepath.exists():
+        lg.warning(f"Configuration file '{filepath}' already exists. Skipping initialization.")
+        return
+
+    lg.info(f"Initializing configuration file at '{filepath}'...")
+    helper = ConfigHelper(filepath=filepath)
+    # The __init__ of ConfigHelper already writes the default config if it doesn't exist.
+    # So we just need to ensure the file was created.
+    if filepath.exists():
+        lg.info(f"Successfully created '{filepath}'.")
+    else:
+        # Fallback if ConfigHelper didn't write it (e.g. if logic changes)
+        helper.write_config(DEFAULT_CONFIG)
+
+
 def run_delete_user(args):
     """Logic to delete a specific user"""
     helper = ConfigHelper(filepath=args.config)
@@ -499,6 +517,10 @@ def main():
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
+
+    # Command: init
+    parser_init = subparsers.add_parser("init", help="Initialize the configuration file")
+    parser_init.set_defaults(func=run_init)
 
     # Command: run (Default setup logic)
     parser_run = subparsers.add_parser("run", help="Run the database setup script (create DBs, users, roles)")
