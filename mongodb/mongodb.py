@@ -7,13 +7,19 @@
 - Provides function to retrieve all documents from a collection.
 """
 
+import argparse
 import logging
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Self
+from typing import Any, Dict, Iterable, List, Optional
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 from urllib.parse import urlparse
 
 import pymongo as pymg
@@ -545,9 +551,15 @@ class MongoDbHelper(MongoDbHelperTemplate):
         """Create a user with specific roles."""
         if self.db is None:
             raise RuntimeError("Database not selected. Use use_db() first.")
-        result = self.db.command("createUser", username, pwd=password, roles=roles)
-        lg.info(f"{username=} created with {roles=}; {result=}")
-        return result
+        try:
+            result = self.db.command("createUser", username, pwd=password, roles=roles)
+            lg.info(f"{username=} created with {roles=}; {result=}")
+            return result
+        except pymgErrors.OperationFailure as e:
+            if e.code == 51003:  # User already exists
+                lg.info(f"User {username} already exists in {self.db.name}")
+                return {"ok": 1, "msg": "User already exists"}
+            raise e
 
     def get_or_create_user(
         self, username: str, password: str, roles: List[Dict[str, Any]]
@@ -557,23 +569,189 @@ class MongoDbHelper(MongoDbHelperTemplate):
         If the user already exists, it will return the user details.
         If not, it will create the user and return the details.
         """
+        # Attempt to create first, if it fails because it exists, check info.
+        # But actually create_user handles the already exists now if we modify it,
+        # or we check first.
+
+        # Original implementation checked first.
         try:
-            user = self.db.command("usersInfo", username)
-            if user["users"]:
+            # usersInfo requires rights.
+            user_info = self.db.command("usersInfo", username)
+            if user_info.get("users"):
                 lg.info(f"{username=} already exists in db={self.db.name}")
-                return user["users"][0]
-        except pymgErrors.PyMongoError as e:
-            lg.warning(f"Failed to retrieve user info: {e}")
+                # Ideally we should update the user if needed, but for now just return
+                return user_info["users"][0]
+        except pymgErrors.PyMongoError:
+            pass  # Try creating if we can't read info or it doesn't exist
 
         return self.create_user(username, password, roles)
 
-    def run(self):
-        if not self.params.db:
-            self.create_user_in_admin_db(
-                username="hello",
-                password="world",
-                roles=[{"role": "readWrite", "db": "test"}],
+    def drop_user(self, username: str, db_name: Optional[str] = None):
+        """Drop a user from the database."""
+        if db_name:
+            self.use_db(db_name)
+        elif self.db is None:
+            raise RuntimeError("Database not selected.")
+
+        try:
+            self.db.command("dropUser", username)
+            lg.info(f"User '{username}' dropped from '{self.db.name}'")
+        except pymgErrors.OperationFailure as e:
+            lg.error(f"Failed to drop user '{username}' from '{self.db.name}': {e}")
+
+    def drop_database(self, db_name: str):
+        """Drop a database."""
+        try:
+            self.client.drop_database(db_name)
+            lg.info(f"Database '{db_name}' dropped.")
+        except pymgErrors.PyMongoError as e:
+            lg.error(f"Failed to drop database '{db_name}': {e}")
+
+    def get_orphaned_users(self) -> List[Dict[str, str]]:
+        """Identify orphaned users (users tagged to non-existent databases)."""
+        active_dbs = set(self.client.list_database_names())
+        lg.info(f"Active databases: {active_dbs}")
+
+        # Access admin database to see system users
+        admin_db = self.client["admin"]
+        # system.users collection contains all users
+        try:
+            # We might need high privileges for this
+            all_users = list(admin_db["system.users"].find())
+        except pymgErrors.PyMongoError:
+            # Try command alternative if direct collection access fails (e.g. strict mongo)
+            # But 'usersInfo' {user:1, db:1} generally checks one db.
+            # Listing all users usually requires querying system.users or command usersInfo on admin with checking all dbs?
+            # Actually 'usersInfo': 1 on admin db returns users on admin db.
+            # To list all users on all DBs, usually one queries the system.users collection in admin.
+            lg.warning(
+                "Could not access admin.system.users directly. Attempting to match against known users config might be better, but assuming admin access."
             )
+            return []
+
+        orphaned = []
+        for user_doc in all_users:
+            user_name = user_doc.get("user")
+            auth_db = user_doc.get("db")
+
+            if auth_db not in active_dbs and auth_db not in [
+                "admin",
+                "local",
+                "config",
+            ]:
+                orphaned.append({"user": user_name, "db": auth_db})
+
+        return orphaned
+
+    def clean_orphaned_users(self):
+        """Removes orphaned users."""
+        orphaned = self.get_orphaned_users()
+        if not orphaned:
+            lg.info("No orphaned users found.")
+            return
+
+        lg.info(f"Found {len(orphaned)} orphaned users.")
+        for target in orphaned:
+            lg.info(
+                f"Orphaned: User '{target['user']}' linked to missing DB '{target['db']}'"
+            )
+
+        # In a script we might ask for confirmation, here we assume if called it is desired or handled by caller
+        # But let's add a force or confirm mechanism in CLI.
+        # For now, just execute as per request 'clean-users' implies action.
+
+        for target in orphaned:
+            try:
+                # To delete a user, we must run command on the auth db (even if it doesn't exist as a filled db, the context matters)
+                # Wait, if the DB doesn't exist, we can still select it contextually in client to run dropUser?
+                # Yes, in MongoDB 'use db' is virtual until data is written, but commands can be run contextually.
+                target_db = self.client[target["db"]]
+                target_db.command("dropUser", target["user"])
+                lg.info(
+                    f"Dropped orphaned user '{target['user']}' from '{target['db']}'"
+                )
+            except pymgErrors.PyMongoError as e:
+                lg.error(f"Failed to drop orphaned user '{target['user']}': {e}")
+
+
+def run_init(cfg):
+    try:
+        CORE = cfg["core"]
+        DATABASES = cfg["databases"]
+    except KeyError as e:
+        lg.error(f"Configuration missing key: {e}")
+        return
+
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+
+    for cfgdb in DATABASES:
+        db_name = cfgdb["db_name"]
+        try:
+            # We just switch to the DB. If it doesn't exist, it will be created when we add user/data.
+            # However, create_user needs the db context.
+            db.use_db(db_name)
+            users = cfgdb.get("users", [])
+
+            # If we want to ensure the DB 'exists' even without users, we might need to insert a dummy collection + doc and delete it?
+            # Or just createCollection.
+            # Requirement says "initialize users and databases".
+            # Creating users implicitly creates the DB context for authentication.
+
+            if users:
+                lg.info(f"Processing {db_name=}, {len(users)=} users defined...")
+                for user in users:
+                    username = user["user"]
+                    password = user["password"]
+                    roles = user["roles"]
+                    try:
+                        db.get_or_create_user(
+                            username=username, password=password, roles=roles
+                        )
+                    except Exception as e:
+                        lg.error(f"Failed to create user {username} in {db_name}: {e}")
+            else:
+                lg.info(
+                    f"No users defined for {db_name}. Accessing DB to ensure connection."
+                )
+                # Maybe explicitly create a collection if needed?
+                # For now just logging.
+        except Exception as e:
+            lg.error(f"Error processing database {db_name}: {e}")
+
+
+def run_clean_users(cfg):
+    CORE = cfg["core"]
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+    db.clean_orphaned_users()
+
+
+def run_delete_user(cfg, user, target_db):
+    CORE = cfg["core"]
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+    try:
+        db.drop_user(user, target_db)
+    except Exception as e:
+        lg.error(f"Error deleting user: {e}")
+
+
+def run_delete_db(cfg, target_db):
+    CORE = cfg["core"]
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+
+    # Safety check?
+    if target_db in ["admin", "local", "config"]:
+        lg.error(f"Cannot delete system database '{target_db}'")
+        return
+
+    # Ask for confirmation if running interactively?
+    # For automation scripts, we assume flags are enough.
+    # The requirement didn't specify interaction, just function.
+
+    db.drop_database(target_db)
 
 
 def main():
@@ -581,25 +759,57 @@ def main():
     # ConfigHelper is used to load the configuration,
     # it will read from config.toml or create a default one if it doesn't exist.
     helper = ConfigHelper()
-    cfg = helper.validate_config().config
 
-    CORE = cfg["core"]
-    DATABASES = cfg["databases"]
+    # We load config primarily for the connection URI.
+    # Some commands might override or not need full config validation if we just want connection.
+    # But let's assume valid config is always good to have.
+    try:
+        helper.validate_config()
+        cfg = helper.config
+    except Exception as e:
+        lg.error(f"Config validation failed: {e}")
+        sys.exit(1)
 
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=2000)
-    db.connect()
-    for cfgdb in DATABASES:
-        db_name = cfgdb["db_name"]
-        db.use_db(db_name)
-        users = cfgdb.get("users", [])
-        if not users:
-            continue  # Skip if no users defined for this db
-        lg.info(f"processing {db_name=}, {len(users)=} users defined...")
-        for user in users:
-            username = user["user"]
-            password = user["password"]
-            roles = user["roles"]
-            db.get_or_create_user(username=username, password=password, roles=roles)
+    parser = argparse.ArgumentParser(description="MongoDB Helper Script")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Command: run
+    parser_run = subparsers.add_parser(
+        "run", help="Initialize users and databases from secrets.toml"
+    )
+
+    # Command: clean-users
+    parser_clean = subparsers.add_parser(
+        "clean-users", help="Clean up orphaned user accounts"
+    )
+
+    # Command: delete-user
+    parser_del_user = subparsers.add_parser(
+        "delete-user", help="Delete a specific user"
+    )
+    parser_del_user.add_argument("--user", required=True, help="Username to delete")
+    parser_del_user.add_argument(
+        "--db", required=True, help="Database the user belongs to"
+    )
+
+    # Command: delete-db
+    parser_del_db = subparsers.add_parser(
+        "delete-db", help="Delete a specific database"
+    )
+    parser_del_db.add_argument("--db", required=True, help="Database name to delete")
+
+    args = parser.parse_args()
+
+    if args.command == "run":
+        run_init(cfg)
+    elif args.command == "clean-users":
+        run_clean_users(cfg)
+    elif args.command == "delete-user":
+        run_delete_user(cfg, args.user, args.db)
+    elif args.command == "delete-db":
+        run_delete_db(cfg, args.db)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
