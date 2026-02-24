@@ -6,6 +6,7 @@
 - Provides a structure similar to the MongoDB helper for consistency.
 """
 
+import argparse
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -219,6 +220,21 @@ class PostgresDbHelper(DbHelperTemplate):
                 sql.SQL("ALTER USER {} CREATEDB").format(sql.Identifier(username))
             )
 
+    def drop_user(self, username: str):
+        if not self.user_exists(username):
+            lg.warning(f"User '{username}' does not exist.")
+            return
+
+        lg.info(f"Dropping user '{username}'...")
+        try:
+            self._execute(
+                sql.SQL("DROP USER {}").format(sql.Identifier(username))
+            )
+            lg.info(f"User '{username}' dropped successfully.")
+        except psycopg.Error as e:
+            lg.error(f"Failed to drop user '{username}': {e}")
+            lg.warning("Note: Users cannot be dropped if they own database objects/privileges. You may need to REASSIGN OWNED or DROP OWNED first.")
+
     def database_exists(self, db_name: str) -> bool:
         res = self._execute(
             "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,), fetch=True
@@ -241,6 +257,29 @@ class PostgresDbHelper(DbHelperTemplate):
                     sql.Identifier(db_name), sql.Identifier(owner)
                 )
             )
+
+    def drop_database(self, db_name: str):
+        if not self.database_exists(db_name):
+            lg.warning(f"Database '{db_name}' does not exist.")
+            return
+
+        lg.info(f"Dropping database '{db_name}'...")
+        try:
+            # FORCE drop by terminating connections first (Postgres specific)
+            self._execute(
+                sql.SQL("""
+                    SELECT pg_terminate_backend(pg_stat_activity.pid)
+                    FROM pg_stat_activity
+                    WHERE pg_stat_activity.datname = {}
+                    AND pid <> pg_backend_pid();
+                """).format(sql.Literal(db_name))
+            )
+            self._execute(
+                sql.SQL("DROP DATABASE {}").format(sql.Identifier(db_name))
+            )
+            lg.info(f"Database '{db_name}' dropped successfully.")
+        except psycopg.Error as e:
+            lg.error(f"Failed to drop database '{db_name}': {e}")
 
     def setup_permissions_for_db(self, db_name: str, users: List[Dict[str, Any]], admin_user: Optional[str]):
         """
@@ -302,29 +341,46 @@ class PostgresDbHelper(DbHelperTemplate):
 
                         if role == "owner":
                             # Owner is handled at DB creation level, but ensure they have usage
+                            cur.execute(sql.SQL("GRANT ALL PRIVILEGES ON DATABASE {} TO {}").format(sql.Identifier(db_name), sql.Identifier(username)))
                             cur.execute(sql.SQL("GRANT ALL ON SCHEMA public TO {}").format(sql.Identifier(username)))
+                            
+                            # Grant all on existing objects
+                            cur.execute(sql.SQL("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO {}").format(sql.Identifier(username)))
+
+                            # Default Privileges for future objects
+                            cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON FUNCTIONS TO {}").format(sql.Identifier(username)))
 
                         elif role == "read_write_create": # app_user1
                             # USAGE, CREATE on schema
                             cur.execute(sql.SQL("GRANT USAGE, CREATE ON SCHEMA public TO {}").format(sql.Identifier(username)))
-                            # RW on Tables
+                            
+                            # RW on Tables/Sequences/Functions (Existing)
                             cur.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}").format(sql.Identifier(username)))
                             cur.execute(sql.SQL("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {}").format(sql.Identifier(username)))
 
-                            # Default Privs
+                            # Default Privs (Future)
                             cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(sql.Identifier(username)))
                             cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO {}").format(sql.Identifier(username)))
 
                         elif role == "read_write": # app_user2
                             # USAGE on schema (No CREATE)
                             cur.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(username)))
-                            # RW on Tables
+                            
+                            # RW on Tables/Sequences/Functions (Existing)
                             cur.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}").format(sql.Identifier(username)))
                             cur.execute(sql.SQL("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {}").format(sql.Identifier(username)))
 
-                            # Default Privs
+                            # Default Privs (Future)
                             cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(sql.Identifier(username)))
                             cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {}").format(sql.Identifier(username)))
+                            cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO {}").format(sql.Identifier(username)))
 
                         elif role == "read_only": # read_user
                             # USAGE on schema
@@ -345,8 +401,9 @@ class PostgresDbHelper(DbHelperTemplate):
             raise
 
 
-def main():
-    helper = ConfigHelper()
+def run_setup(args):
+    """Execution logic for setting up databases and users"""
+    helper = ConfigHelper(filepath=args.config)
     cfg = helper.validate_config().config
 
     CORE = cfg["core"]
@@ -391,6 +448,79 @@ def main():
         lg.info(f"--- Finished configuration for: {db_name} ---\n")
 
     lg.info("All database operations completed successfully.")
+
+
+def run_delete_user(args):
+    """Logic to delete a specific user"""
+    helper = ConfigHelper(filepath=args.config)
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+
+    db = PostgresDbHelper(connection_str=CORE["POSTGRES_URI"])
+    db.connect()
+
+    username = args.username
+    lg.info(f"Are you sure you want to delete user '{username}'? This action cannot be undone.")
+    choice = input("Type 'yes' to proceed: ")
+    if choice.lower() != 'yes':
+        lg.info("Operation cancelled.")
+        return
+
+    db.drop_user(username)
+
+
+def run_delete_db(args):
+    """Logic to delete a specific database"""
+    helper = ConfigHelper(filepath=args.config)
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+
+    db = PostgresDbHelper(connection_str=CORE["POSTGRES_URI"])
+    db.connect()
+
+    db_name = args.db_name
+    lg.warning(f"WARNING: This will PERMANENTLY DELETE database '{db_name}'.")
+    lg.warning("All connections will be terminated.")
+    choice = input("Type 'yes' to proceed: ")
+    if choice.lower() != 'yes':
+        lg.info("Operation cancelled.")
+        return
+
+    db.drop_database(db_name)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="PostgreSQL DB Helper")
+    parser.add_argument(
+        "-c", "--config", 
+        type=Path, 
+        default=CONFIG_FILE,
+        help="Path to the secrets.postgres.toml configuration file."
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
+
+    # Command: run (Default setup logic)
+    parser_run = subparsers.add_parser("run", help="Run the database setup script (create DBs, users, roles)")
+    parser_run.set_defaults(func=run_setup)
+
+    # Command: delete-user
+    parser_delete = subparsers.add_parser("delete-user", help="Delete a specific user/role")
+    parser_delete.add_argument("username", type=str, help="Username to delete")
+    parser_delete.set_defaults(func=run_delete_user)
+
+    # Command: delete-db
+    parser_delete_db = subparsers.add_parser("delete-db", help="Delete a specific database")
+    parser_delete_db.add_argument("db_name", type=str, help="Database name to delete")
+    parser_delete_db.set_defaults(func=run_delete_db)
+
+    args = parser.parse_args()
+    
+    # Execute the selected function
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main()
