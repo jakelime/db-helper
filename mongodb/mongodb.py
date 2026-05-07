@@ -8,6 +8,7 @@
 """
 
 import argparse
+import json
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -24,6 +25,7 @@ from urllib.parse import urlparse
 
 import pymongo as pymg
 import tomlkit
+from bson import json_util
 from pymongo import errors as pymgErrors
 from pymongo.write_concern import WriteConcern
 
@@ -673,6 +675,116 @@ class MongoDbHelper(MongoDbHelperTemplate):
             except pymgErrors.PyMongoError as e:
                 lg.error(f"Failed to drop orphaned user '{target['user']}': {e}")
 
+    # --- Dump / Restore ---
+
+    SYSTEM_DBS = {"admin", "local", "config"}
+
+    def dump_databases(
+        self,
+        out_dir: Path,
+        db_names: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Dump one or more databases to JSON files.
+
+        Each collection is saved as:
+            <out_dir>/<db_name>/<collection_name>.json
+
+        Parameters
+        ----------
+        out_dir : Path
+            Root output directory. Created if it does not exist.
+        db_names : list[str] | None
+            Databases to dump. If None, all non-system databases are dumped.
+        """
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        if db_names is None:
+            all_dbs = self.client.list_database_names()
+            db_names = [d for d in all_dbs if d not in self.SYSTEM_DBS]
+
+        lg.info(f"Dumping {len(db_names)} database(s) to '{out_dir}' ...")
+        for db_name in db_names:
+            db_obj = self.client[db_name]
+            db_out = out_dir / db_name
+            db_out.mkdir(parents=True, exist_ok=True)
+
+            collections = db_obj.list_collection_names()
+            lg.info(f"  [{db_name}] {len(collections)} collection(s)")
+            for coll_name in collections:
+                docs = list(db_obj[coll_name].find())
+                out_file = db_out / f"{coll_name}.json"
+                with open(out_file, "w", encoding="utf-8") as f:
+                    json.dump(docs, f, default=json_util.default, indent=2)
+                lg.info(f"    -> {coll_name}: {len(docs)} document(s) -> {out_file}")
+
+        lg.info("Dump complete.")
+
+    def restore_databases(
+        self,
+        src_dir: Path,
+        target_uri: str,
+        db_names: Optional[List[str]] = None,
+        drop_before_restore: bool = False,
+    ) -> None:
+        """
+        Restore dumped JSON files into a target MongoDB instance.
+
+        Parameters
+        ----------
+        src_dir : Path
+            Root directory produced by dump_databases().
+        target_uri : str
+            Connection string for the destination MongoDB server.
+        db_names : list[str] | None
+            Sub-directories (databases) to restore. If None, all found in src_dir.
+        drop_before_restore : bool
+            If True, drop each collection before inserting. Useful for a clean restore.
+        """
+        target_client = pymg.MongoClient(target_uri)
+        try:
+            target_client.admin.command("ping")
+            lg.info(f"Connected to target: {self.obscure_password(target_uri)}")
+        except pymgErrors.PyMongoError as e:
+            lg.error(f"Failed to connect to target MongoDB: {e}")
+            raise
+
+        if db_names is None:
+            db_names = [p.name for p in src_dir.iterdir() if p.is_dir()]
+
+        lg.info(f"Restoring {len(db_names)} database(s) from '{src_dir}' ...")
+        for db_name in db_names:
+            db_src = src_dir / db_name
+            if not db_src.exists():
+                lg.warning(f"  [{db_name}] Source directory not found, skipping.")
+                continue
+
+            target_db = target_client[db_name]
+            json_files = list(db_src.glob("*.json"))
+            lg.info(f"  [{db_name}] {len(json_files)} collection file(s)")
+
+            for json_file in json_files:
+                coll_name = json_file.stem
+                with open(json_file, "r", encoding="utf-8") as f:
+                    docs = json.load(f, object_hook=json_util.object_hook)
+
+                if not docs:
+                    lg.info(f"    -> {coll_name}: 0 documents, skipping.")
+                    continue
+
+                coll = target_db[coll_name]
+                if drop_before_restore:
+                    coll.drop()
+                    lg.info(f"    -> {coll_name}: dropped (clean restore).")
+
+                result = coll.insert_many(docs, ordered=False)
+                lg.info(
+                    f"    -> {coll_name}: inserted {len(result.inserted_ids)}/{len(docs)} document(s)."
+                )
+
+        lg.info("Restore complete.")
+        target_client.close()
+
 
 def run_init(cfg):
     try:
@@ -754,6 +866,35 @@ def run_delete_db(cfg, target_db):
     db.drop_database(target_db)
 
 
+def run_dump(cfg, out_dir: Path, db_names: Optional[List[str]]):
+    """Dump one or all databases to JSON files."""
+    CORE = cfg["core"]
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+    db.dump_databases(out_dir=out_dir, db_names=db_names if db_names else None)
+
+
+def run_restore(
+    cfg,
+    src_dir: Path,
+    target_uri: Optional[str],
+    db_names: Optional[List[str]],
+    drop: bool,
+):
+    """Restore JSON dump files into a target MongoDB instance."""
+    CORE = cfg["core"]
+    # If no target URI supplied, restore back into the source (useful for re-seeding)
+    uri = target_uri or CORE["MONGODB_URI"]
+    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
+    db.connect()
+    db.restore_databases(
+        src_dir=src_dir,
+        target_uri=uri,
+        db_names=db_names if db_names else None,
+        drop_before_restore=drop,
+    )
+
+
 def main():
     # 1. Initialize ConfigHelper and load configuration
     # ConfigHelper is used to load the configuration,
@@ -798,6 +939,60 @@ def main():
     )
     parser_del_db.add_argument("--db", required=True, help="Database name to delete")
 
+    # Command: dump
+    parser_dump = subparsers.add_parser(
+        "dump",
+        help="Dump one or all databases to JSON files (for migration)",
+    )
+    parser_dump.add_argument(
+        "--db",
+        dest="db_names",
+        nargs="+",
+        metavar="DB",
+        default=None,
+        help="Database(s) to dump. If omitted, all non-system databases are dumped.",
+    )
+    parser_dump.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Output directory (default: ./dump_<timestamp>)",
+    )
+
+    # Command: restore
+    parser_restore = subparsers.add_parser(
+        "restore",
+        help="Restore a dump directory into a target MongoDB instance",
+    )
+    parser_restore.add_argument(
+        "--src",
+        type=Path,
+        required=True,
+        metavar="DIR",
+        help="Source dump directory (produced by the 'dump' command)",
+    )
+    parser_restore.add_argument(
+        "--target-uri",
+        default=None,
+        metavar="URI",
+        help="Target MongoDB connection URI. Defaults to the URI in secrets.mongodb.toml.",
+    )
+    parser_restore.add_argument(
+        "--db",
+        dest="db_names",
+        nargs="+",
+        metavar="DB",
+        default=None,
+        help="Database(s) to restore. If omitted, all databases in --src are restored.",
+    )
+    parser_restore.add_argument(
+        "--drop",
+        action="store_true",
+        default=False,
+        help="Drop each collection before inserting (clean restore).",
+    )
+
     args = parser.parse_args()
 
     if args.command == "run":
@@ -808,6 +1003,17 @@ def main():
         run_delete_user(cfg, args.user, args.db)
     elif args.command == "delete-db":
         run_delete_db(cfg, args.db)
+    elif args.command == "dump":
+        out = args.out or Path(f"./dump_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        run_dump(cfg, out_dir=out, db_names=args.db_names)
+    elif args.command == "restore":
+        run_restore(
+            cfg,
+            src_dir=args.src,
+            target_uri=args.target_uri,
+            db_names=args.db_names,
+            drop=args.drop,
+        )
     else:
         parser.print_help()
 

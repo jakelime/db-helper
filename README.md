@@ -22,6 +22,80 @@ database and db_user accounts.
    - You can create any number of users, users are subset of the databases to be
      created in the database itself.
 
+## MongoDB CLI Commands
+
+All commands are run from the `mongodb/` directory:
+
+```bash
+cd db-helper/mongodb/
+```
+
+### `run` — Initialize databases and users
+
+Creates databases and users defined in `secrets.mongodb.toml`.
+
+```bash
+python mongodb.py run
+```
+
+### `clean-users` — Remove orphaned users
+
+Finds and drops users whose authentication database no longer exists.
+
+```bash
+python mongodb.py clean-users
+```
+
+### `delete-user` — Delete a specific user
+
+```bash
+python mongodb.py delete-user --user <username> --db <database>
+```
+
+### `delete-db` — Delete a specific database
+
+```bash
+python mongodb.py delete-db --db <database>
+```
+
+### `dump` — Export data for migration
+
+Dumps one or all non-system databases to JSON files. Each collection is saved as
+`<out_dir>/<db_name>/<collection_name>.json`. Uses `bson.json_util` to correctly
+handle MongoDB-specific types (`ObjectId`, `datetime`, etc.).
+
+```bash
+# Dump all databases (auto-names output dir with timestamp)
+python mongodb.py dump
+
+# Dump specific databases into a named output directory
+python mongodb.py dump --db myapp_db another_db --out ./uat-dump
+```
+
+### `restore` — Import a dump into another MongoDB instance
+
+Reads JSON files produced by `dump` and inserts them into a target MongoDB server.
+Useful for migrating data from UAT → DEV (or any environment-to-environment transfer).
+
+```bash
+# Restore all databases from a dump directory into a different server
+python mongodb.py restore --src ./uat-dump --target-uri "mongodb://root:pass@dev-host:27017/"
+
+# Restore specific databases only
+python mongodb.py restore --src ./uat-dump --db myapp_db --target-uri "mongodb://..."
+
+# Clean restore: drop each collection before inserting
+python mongodb.py restore --src ./uat-dump --target-uri "mongodb://..." --drop
+```
+
+> **Tip — UAT → DEV migration workflow:**
+>
+> 1. On UAT server: `python mongodb.py dump --out ./uat-dump`
+> 2. Copy `./uat-dump/` to DEV server (e.g. via `scp` or shared volume).
+> 3. On DEV server: `python mongodb.py restore --src ./uat-dump --target-uri "mongodb://root:pass@dev-host:27017/" --drop`
+
+---
+
 ## Known Issues
 
 Postgres helper is alot more complex than this simple implementation.
