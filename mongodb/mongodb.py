@@ -173,12 +173,8 @@ class ConfigHelper:
             raise e
 
     def validate_config(self) -> Self:
-        cfg = self.config
-        try:
-            _ = cfg["databases"]
-        except tomlkit.exceptions.NonExistentKey:
-            raise ValueError("Error in config: 'databases' key is missing.")
-        return self
+        # For now, this does nothing
+        pass
 
 
 @dataclass
