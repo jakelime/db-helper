@@ -123,6 +123,17 @@ Postgres helper is alot more complex than this simple implementation.
 ## Helper functions
 
 ```bash
+
+
+python -c "import shutil; shutil.make_archive('dump_20260507_144952', 'zip', '.', 'dump_20260507_144952')"
+
+python -c "import zipfile; zipfile.ZipFile('dump_20260507_144952.zip').extractall('.')"
+python -c "import zipfile; zipfile.ZipFile('dump_20260507_144952.zip').extractall('./restored')"
+
+# List contents without extracting:
+python -c "import zipfile; [print(f) for f in zipfile.ZipFile('dump_20260507_144952.zip').namelist()]"
+
+
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 
 # Generates a secured secret key for use as password of 1+21 char in length
