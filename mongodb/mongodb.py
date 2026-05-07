@@ -709,10 +709,21 @@ class MongoDbHelper(MongoDbHelperTemplate):
             db_out = out_dir / db_name
             db_out.mkdir(parents=True, exist_ok=True)
 
-            collections = db_obj.list_collection_names()
+            try:
+                collections = db_obj.list_collection_names(
+                    filter={"type": "collection"}
+                )
+            except pymgErrors.OperationFailure as e:
+                lg.warning(f"  [{db_name}] Cannot list collections (permission denied): {e.details.get('errmsg', e)}. Skipping.")
+                continue
+
             lg.info(f"  [{db_name}] {len(collections)} collection(s)")
             for coll_name in collections:
-                docs = list(db_obj[coll_name].find())
+                try:
+                    docs = list(db_obj[coll_name].find())
+                except pymgErrors.OperationFailure as e:
+                    lg.warning(f"    -> {coll_name}: skipped (permission denied): {e.details.get('errmsg', e)}")
+                    continue
                 out_file = db_out / f"{coll_name}.json"
                 with open(out_file, "w", encoding="utf-8") as f:
                     json.dump(docs, f, default=json_util.default, indent=2)
