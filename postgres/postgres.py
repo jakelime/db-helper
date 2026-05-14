@@ -8,9 +8,11 @@
 
 import argparse
 import logging
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Self
 from urllib.parse import urlparse
@@ -35,6 +37,7 @@ CONFIG_FILE = Path(__file__).parent / "secrets.postgres.toml"
 DEFAULT_CONFIG = {
     "core": {
         "POSTGRES_URI": "postgresql://rootuser:Th8pdKayocQwAQKTK2@localhost:5432/postgres",
+        "DOCKER_CONTAINER": "jfc_pgdb2",
     },
     "admin": {
         "user": "db_admin",
@@ -167,9 +170,10 @@ class DbHelperTemplate(ABC):
 
 
 class PostgresDbHelper(DbHelperTemplate):
-    def __init__(self, connection_str: str):
+    def __init__(self, connection_str: str, docker_container: Optional[str] = None):
         self.params = DbConnectionParam.from_uri(connection_str)
         self.connection_str = connection_str
+        self.docker_container = docker_container
         self.conn = None
 
     def connect(self) -> Self:
@@ -400,6 +404,129 @@ class PostgresDbHelper(DbHelperTemplate):
             lg.error(f"Failed to apply permissions on database '{db_name}': {e}")
             raise
 
+    def dump(self, db_name: str, output_path: Path) -> Path:
+        """Dump an entire database to a file using pg_dump (custom format).
+
+        Args:
+            db_name:     Name of the database to back up.
+            output_path: Destination file path. If a directory is given, a
+                         timestamped filename is generated automatically.
+
+        Returns:
+            Path to the created dump file.
+        """
+        if output_path.is_dir():
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = output_path / f"{db_name}_{timestamp}.dump"
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.docker_container:
+            raise ValueError("DOCKER_CONTAINER must be configured in 'core' section to use pg_dump via docker.")
+
+        parsed = urlparse(self.params.conn_str)
+        container_tmp_path = f"/tmp/{output_path.name}"
+
+        lg.info(f"Dumping database '{db_name}' inside container '{self.docker_container}' → {output_path} ...")
+        
+        # 1. Run pg_dump inside the container
+        cmd = [
+            "docker", "exec",
+            "-e", f"PGPASSWORD={parsed.password or ''}",
+            self.docker_container,
+            "pg_dump",
+            "--format=custom",
+            "--no-password",
+            "--host=localhost",  # Run inside container, so host is localhost
+            f"--port={parsed.port or 5432}",
+            f"--username={parsed.username}",
+            f"--file={container_tmp_path}",
+            db_name,
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.stderr:
+                lg.debug(f"pg_dump stderr: {result.stderr.strip()}")
+            
+            # 2. Copy the file out of the container
+            lg.info("Copying dump file from container to local path...")
+            cp_cmd = ["docker", "cp", f"{self.docker_container}:{container_tmp_path}", str(output_path)]
+            subprocess.run(cp_cmd, check=True, capture_output=True, text=True)
+            
+            # 3. Cleanup inside container
+            rm_cmd = ["docker", "exec", self.docker_container, "rm", "-f", container_tmp_path]
+            subprocess.run(rm_cmd, check=False, capture_output=True)
+
+            lg.info(f"Dump completed successfully: {output_path}")
+            return output_path
+        except subprocess.CalledProcessError as e:
+            lg.error(f"Command '{' '.join(e.cmd)}' failed (exit {e.returncode}): {e.stderr.strip()}")
+            raise
+
+    def restore(self, db_name: str, input_path: Path):
+        """Restore an entire database from a pg_dump custom-format file.
+
+        Args:
+            db_name:    Target database name.
+            input_path: Path to the .dump file produced by :meth:`dump`.
+        """
+        if not input_path.exists():
+            raise FileNotFoundError(f"Dump file not found: {input_path}")
+
+        if not self.docker_container:
+            raise ValueError("DOCKER_CONTAINER must be configured in 'core' section to use pg_restore via docker.")
+
+        parsed = urlparse(self.params.conn_str)
+        container_tmp_path = f"/tmp/{input_path.name}"
+
+        lg.info(f"Restoring '{db_name}' from {input_path} via container '{self.docker_container}' ...")
+        
+        try:
+            # 1. Copy the dump file into the container
+            lg.info("Copying dump file into the container...")
+            cp_cmd = ["docker", "cp", str(input_path), f"{self.docker_container}:{container_tmp_path}"]
+            subprocess.run(cp_cmd, check=True, capture_output=True, text=True)
+
+            # 2. Run pg_restore inside the container
+            cmd = [
+                "docker", "exec",
+                "-e", f"PGPASSWORD={parsed.password or ''}",
+                self.docker_container,
+                "pg_restore",
+                "--no-password",
+                "--exit-on-error",
+                "-h", "localhost",
+                "-p", str(parsed.port or 5432),
+                "-U", parsed.username,
+                "-d", db_name,
+                container_tmp_path,
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.stderr:
+                lg.debug(f"pg_restore stderr: {result.stderr.strip()}")
+            lg.info(f"Restore completed successfully for '{db_name}'.")
+
+        except subprocess.CalledProcessError as e:
+            lg.error(f"pg_restore failed (exit {e.returncode}).")
+            if e.stderr:
+                lg.error(f"Error details:\n{e.stderr.strip()}")
+            raise
+        finally:
+            # 3. Cleanup inside container
+            rm_cmd = ["docker", "exec", self.docker_container, "rm", "-f", container_tmp_path]
+            subprocess.run(rm_cmd, check=False, capture_output=True)
+
 
 def run_setup(args):
     """Execution logic for setting up databases and users"""
@@ -411,7 +538,10 @@ def run_setup(args):
     DATABASES = cfg["databases"]
 
     # 1. Connect as Root to 'postgres' database
-    db = PostgresDbHelper(connection_str=CORE["POSTGRES_URI"])
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
     db.connect()
 
     # 2. Setup Global Admin User
@@ -474,7 +604,10 @@ def run_delete_user(args):
     cfg = helper.validate_config().config
     CORE = cfg["core"]
 
-    db = PostgresDbHelper(connection_str=CORE["POSTGRES_URI"])
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
     db.connect()
 
     username = args.username
@@ -493,7 +626,10 @@ def run_delete_db(args):
     cfg = helper.validate_config().config
     CORE = cfg["core"]
 
-    db = PostgresDbHelper(connection_str=CORE["POSTGRES_URI"])
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
     db.connect()
 
     db_name = args.db_name
@@ -505,6 +641,77 @@ def run_delete_db(args):
         return
 
     db.drop_database(db_name)
+
+
+def run_dump(args):
+    """Dump a database to a file using pg_dump via docker exec."""
+    helper = ConfigHelper(filepath=args.config)
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
+    # We do not strictly need psycopg to execute dump if it's all handled by pg_dump,
+    # but connecting validates the python-side URL.
+    db.connect()
+
+    output_path = Path(args.output) if args.output else Path(".")
+    db.dump(args.db_name, output_path)
+
+
+def run_restore(args):
+    """Restore a database from a pg_dump file via docker exec."""
+    helper = ConfigHelper(filepath=args.config)
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+    DATABASES = cfg.get("databases", [])
+    ADMIN = cfg.get("admin")
+
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
+    db.connect()
+
+    input_path = Path(args.input_file)
+    db_name = args.db_name
+
+    db_cfg = next((d for d in DATABASES if d["db_name"] == db_name), None)
+
+    if args.create:
+        lg.warning(f"--create flag set: database '{db_name}' will be dropped and recreated.")
+        choice = input("Type 'yes' to proceed: ")
+        if choice.lower() != 'yes':
+            lg.info("Operation cancelled.")
+            return
+        if db.database_exists(db_name):
+            db.drop_database(db_name)
+
+    if not db.database_exists(db_name):
+        if not db_cfg:
+            lg.error(f"Database '{db_name}' not found in '{args.config}'. Please configure it or create the database and users first.")
+            sys.exit(1)
+        
+        lg.info(f"Database '{db_name}' does not exist. Creating it using config parameters...")
+        users = db_cfg.get("users", [])
+        admin_username = ADMIN["user"] if ADMIN else None
+
+        owner_user = None
+        for user in users:
+            db.create_user_if_not_exists(user["user"], user["password"])
+            if user.get("role") == "owner":
+                owner_user = user["user"]
+
+        db.create_database(db_name, owner=owner_user)
+        db.setup_permissions_for_db(db_name, users, admin_username)
+
+    try:
+        db.restore(db_name, input_path)
+    except subprocess.CalledProcessError:
+        lg.error(f"Failed to restore database '{db_name}'.")
+        sys.exit(1)
 
 
 def main():
@@ -535,6 +742,29 @@ def main():
     parser_delete_db = subparsers.add_parser("delete-db", help="Delete a specific database")
     parser_delete_db.add_argument("db_name", type=str, help="Database name to delete")
     parser_delete_db.set_defaults(func=run_delete_db)
+
+    # Command: dump
+    parser_dump = subparsers.add_parser("dump", help="Dump an entire database to a file (pg_dump custom format)")
+    parser_dump.add_argument("db_name", type=str, help="Database name to dump")
+    parser_dump.add_argument(
+        "-o", "--output",
+        type=str,
+        default=None,
+        help="Output file path or directory. Defaults to current directory with an auto-generated filename.",
+    )
+    parser_dump.set_defaults(func=run_dump)
+
+    # Command: restore
+    parser_restore = subparsers.add_parser("restore", help="Restore an entire database from a dump file (pg_restore)")
+    parser_restore.add_argument("db_name", type=str, help="Target database name to restore into")
+    parser_restore.add_argument("input_file", type=str, help="Path to the .dump file")
+    parser_restore.add_argument(
+        "--create",
+        action="store_true",
+        default=False,
+        help="Drop and recreate the target database before restoring",
+    )
+    parser_restore.set_defaults(func=run_restore)
 
     args = parser.parse_args()
     
