@@ -714,6 +714,37 @@ def run_restore(args):
         sys.exit(1)
 
 
+def run_change_root_password(args):
+    """Change the root user's password."""
+    helper = ConfigHelper(filepath=args.config)
+    cfg = helper.validate_config().config
+    CORE = cfg["core"]
+
+    db = PostgresDbHelper(
+        connection_str=CORE["POSTGRES_URI"],
+        docker_container=CORE.get("DOCKER_CONTAINER", "jfc_pgdb2")
+    )
+    db.connect()
+
+    root_user = db.params.username
+    if not root_user:
+        lg.error("Could not determine root username from POSTGRES_URI.")
+        sys.exit(1)
+
+    lg.info(f"Updating password for root user '{root_user}'...")
+    try:
+        db._execute(
+            sql.SQL("ALTER USER {} WITH PASSWORD {}").format(
+                sql.Identifier(root_user), sql.Literal(args.new_password)
+            )
+        )
+        lg.info(f"Successfully changed password for '{root_user}'.")
+        lg.warning("IMPORTANT: Please update POSTGRES_URI in your config file to use the new password!")
+    except psycopg.Error as e:
+        lg.error(f"Failed to change password: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="PostgreSQL DB Helper")
     parser.add_argument(
@@ -765,6 +796,11 @@ def main():
         help="Drop and recreate the target database before restoring",
     )
     parser_restore.set_defaults(func=run_restore)
+
+    # Command: change-root-password
+    parser_change_root_password = subparsers.add_parser("change-root-password", help="Change the root user's password")
+    parser_change_root_password.add_argument("new_password", type=str, help="The new password for the root user")
+    parser_change_root_password.set_defaults(func=run_change_root_password)
 
     args = parser.parse_args()
     
