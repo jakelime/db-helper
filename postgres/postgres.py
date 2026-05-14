@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Self
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import psycopg
 import tomlkit
@@ -143,11 +143,15 @@ class DbConnectionParam:
         parsed = urlparse(uri)
         database_name = parsed.path.lstrip("/")
 
+        # urlparse leaves percent-encoding in password and username. Safely unquote them.
+        password = unquote(parsed.password) if parsed.password else None
+        username = unquote(parsed.username) if parsed.username else None
+
         return cls(
             conn_str=uri,
             db=database_name if database_name else "postgres",
-            username=parsed.username,
-            password=parsed.password,
+            username=username,
+            password=password,
             host=parsed.hostname,
             port=parsed.port,
         )
@@ -163,6 +167,7 @@ class DbHelperTemplate(ABC):
         try:
             parsed = urlparse(connection_str)
             if parsed.password:
+                # Replace the raw URL password substring
                 return connection_str.replace(parsed.password, "***")
         except Exception:
             pass
