@@ -11,6 +11,8 @@ import argparse
 import json
 import logging
 import sys
+import tarfile
+import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -679,12 +681,17 @@ class MongoDbHelper(MongoDbHelperTemplate):
         self,
         out_dir: Path,
         db_names: Optional[List[str]] = None,
+        compress: bool = False,
     ) -> None:
         """
-        Dump one or more databases to JSON files.
+        Dump one or more databases to JSON files or a compressed tar.gz.
 
-        Each collection is saved as:
-            <out_dir>/<db_name>/<collection_name>.json
+        If compress=False:
+            Each collection is saved as:
+                <out_dir>/<db_name>/<collection_name>.json
+        If compress=True:
+            Each database is saved as:
+                <out_dir>/<db_name>.tar.gz
 
         Parameters
         ----------
@@ -692,6 +699,8 @@ class MongoDbHelper(MongoDbHelperTemplate):
             Root output directory. Created if it does not exist.
         db_names : list[str] | None
             Databases to dump. If None, all non-system databases are dumped.
+        compress : bool
+            If True, compress each database into a tar.gz file.
         """
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -702,30 +711,111 @@ class MongoDbHelper(MongoDbHelperTemplate):
         lg.info(f"Dumping {len(db_names)} database(s) to '{out_dir}' ...")
         for db_name in db_names:
             db_obj = self.client[db_name]
-            db_out = out_dir / db_name
-            db_out.mkdir(parents=True, exist_ok=True)
 
             try:
                 collections = db_obj.list_collection_names(
                     filter={"type": "collection"}
                 )
             except pymgErrors.OperationFailure as e:
-                lg.warning(f"  [{db_name}] Cannot list collections (permission denied): {e.details.get('errmsg', e)}. Skipping.")
+                lg.warning(
+                    f"  [{db_name}] Cannot list collections (permission denied): {e.details.get('errmsg', e)}. Skipping."
+                )
                 continue
 
             lg.info(f"  [{db_name}] {len(collections)} collection(s)")
-            for coll_name in collections:
+
+            if compress:
+                tar_path = out_dir / f"{db_name}.tar.gz"
                 try:
-                    docs = list(db_obj[coll_name].find())
-                except pymgErrors.OperationFailure as e:
-                    lg.warning(f"    -> {coll_name}: skipped (permission denied): {e.details.get('errmsg', e)}")
-                    continue
-                out_file = db_out / f"{coll_name}.json"
-                with open(out_file, "w", encoding="utf-8") as f:
-                    json.dump(docs, f, default=json_util.default, indent=2)
-                lg.info(f"    -> {coll_name}: {len(docs)} document(s) -> {out_file}")
+                    with tarfile.open(tar_path, "w:gz") as tar:
+                        for coll_name in collections:
+                            try:
+                                docs = list(db_obj[coll_name].find())
+                            except pymgErrors.OperationFailure as e:
+                                lg.warning(
+                                    f"    -> {coll_name}: skipped (permission denied): {e.details.get('errmsg', e)}"
+                                )
+                                continue
+                            json_data = json.dumps(
+                                docs, default=json_util.default, indent=2
+                            ).encode("utf-8")
+                            info = tarfile.TarInfo(name=f"{db_name}/{coll_name}.json")
+                            info.size = len(json_data)
+                            tar.addfile(tarinfo=info, fileobj=io.BytesIO(json_data))
+                            lg.info(
+                                f"    -> {coll_name}: {len(docs)} document(s) -> {db_name}.tar.gz"
+                            )
+                except Exception as e:
+                    lg.error(f"  [{db_name}] Error creating archive: {e}")
+            else:
+                db_out = out_dir / db_name
+                db_out.mkdir(parents=True, exist_ok=True)
+                for coll_name in collections:
+                    try:
+                        docs = list(db_obj[coll_name].find())
+                    except pymgErrors.OperationFailure as e:
+                        lg.warning(
+                            f"    -> {coll_name}: skipped (permission denied): {e.details.get('errmsg', e)}"
+                        )
+                        continue
+                    out_file = db_out / f"{coll_name}.json"
+                    with open(out_file, "w", encoding="utf-8") as f:
+                        json.dump(docs, f, default=json_util.default, indent=2)
+                    lg.info(
+                        f"    -> {coll_name}: {len(docs)} document(s) -> {out_file}"
+                    )
 
         lg.info("Dump complete.")
+
+    def restore_from_dir(self, db_src: Path, target_db, drop_before_restore: bool):
+        json_files = list(db_src.glob("*.json"))
+        lg.info(
+            f"  [{target_db.name}] {len(json_files)} collection file(s) (uncompressed)"
+        )
+
+        for json_file in json_files:
+            coll_name = json_file.stem
+            with open(json_file, "r", encoding="utf-8") as f:
+                docs = json.load(f, object_hook=json_util.object_hook)
+            self.restore_docs(target_db, coll_name, docs, drop_before_restore)
+
+    def restore_from_tar(self, tar_src: Path, target_db, drop_before_restore: bool):
+        lg.info(f"  [{target_db.name}] Reading from archive {tar_src.name}")
+        try:
+            with tarfile.open(tar_src, "r:gz") as tar:
+                members = [m for m in tar.getmembers() if m.name.endswith(".json")]
+                lg.info(
+                    f"  [{target_db.name}] {len(members)} collection file(s) in archive"
+                )
+
+                for member in members:
+                    # m.name is typically "<db_name>/<coll_name>.json"
+                    coll_name = Path(member.name).stem
+                    f = tar.extractfile(member)
+                    if f is None:
+                        continue
+                    content = f.read().decode("utf-8")
+                    docs = json.loads(content, object_hook=json_util.object_hook)
+                    self.restore_docs(target_db, coll_name, docs, drop_before_restore)
+        except Exception as e:
+            lg.error(f"  [{target_db.name}] Failed to restore from {tar_src.name}: {e}")
+
+    def restore_docs(
+        self, target_db, coll_name: str, docs: list, drop_before_restore: bool
+    ):
+        if not docs:
+            lg.info(f"    -> {coll_name}: 0 documents, skipping.")
+            return
+
+        coll = target_db[coll_name]
+        if drop_before_restore:
+            coll.drop()
+            lg.info(f"    -> {coll_name}: dropped (clean restore).")
+
+        result = coll.insert_many(docs, ordered=False)
+        lg.info(
+            f"    -> {coll_name}: inserted {len(result.inserted_ids)}/{len(docs)} document(s)."
+        )
 
     def restore_databases(
         self,
@@ -736,11 +826,12 @@ class MongoDbHelper(MongoDbHelperTemplate):
     ) -> None:
         """
         Restore dumped JSON files into a target MongoDB instance.
+        Supports both directories of JSON files and .tar.gz archives.
 
         Parameters
         ----------
         src_dir : Path
-            Root directory produced by dump_databases().
+            Root directory produced by dump_databases(), or a specific .tar.gz file.
         target_uri : str
             Connection string for the destination MongoDB server.
         db_names : list[str] | None
@@ -756,66 +847,55 @@ class MongoDbHelper(MongoDbHelperTemplate):
             lg.error(f"Failed to connect to target MongoDB: {e}")
             raise
 
+        if not src_dir.exists():
+            lg.error(f"Source path {src_dir} does not exist.")
+            target_client.close()
+            return
+
+        # Handle case where user provided a single .tar.gz file
+        if src_dir.is_file() and src_dir.name.endswith(".tar.gz"):
+            db_name_from_file = src_dir.name[:-7]
+            if db_names is None or db_name_from_file in db_names:
+                self.restore_from_tar(
+                    src_dir, target_client[db_name_from_file], drop_before_restore
+                )
+            lg.info("Restore complete.")
+            target_client.close()
+            return
+
         if db_names is None:
-            db_names = [p.name for p in src_dir.iterdir() if p.is_dir()]
+            subdirs = [p.name for p in src_dir.iterdir() if p.is_dir()]
+            tarfiles = [p.name[:-7] for p in src_dir.glob("*.tar.gz")]
+            db_names = list(set(subdirs + tarfiles))
 
         lg.info(f"Restoring {len(db_names)} database(s) from '{src_dir}' ...")
         for db_name in db_names:
-            db_src = src_dir / db_name
-            if not db_src.exists():
-                lg.warning(f"  [{db_name}] Source directory not found, skipping.")
-                continue
-
+            tar_src = src_dir / f"{db_name}.tar.gz"
+            dir_src = src_dir / db_name
             target_db = target_client[db_name]
-            json_files = list(db_src.glob("*.json"))
-            lg.info(f"  [{db_name}] {len(json_files)} collection file(s)")
 
-            for json_file in json_files:
-                coll_name = json_file.stem
-                with open(json_file, "r", encoding="utf-8") as f:
-                    docs = json.load(f, object_hook=json_util.object_hook)
-
-                if not docs:
-                    lg.info(f"    -> {coll_name}: 0 documents, skipping.")
-                    continue
-
-                coll = target_db[coll_name]
-                if drop_before_restore:
-                    coll.drop()
-                    lg.info(f"    -> {coll_name}: dropped (clean restore).")
-
-                result = coll.insert_many(docs, ordered=False)
-                lg.info(
-                    f"    -> {coll_name}: inserted {len(result.inserted_ids)}/{len(docs)} document(s)."
+            if tar_src.exists():
+                self.restore_from_tar(tar_src, target_db, drop_before_restore)
+            elif dir_src.exists():
+                self.restore_from_dir(dir_src, target_db, drop_before_restore)
+            else:
+                lg.warning(
+                    f"  [{db_name}] Source directory or tarball not found, skipping."
                 )
 
         lg.info("Restore complete.")
         target_client.close()
 
 
-def run_init(cfg):
-    try:
-        CORE = cfg["core"]
-        DATABASES = cfg["databases"]
-    except KeyError as e:
-        lg.error(f"Configuration missing key: {e}")
-        return
-
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
-
+def run_init(cfg, db: MongoDbHelper):
+    DATABASES = cfg.get("databases", [])
     for cfgdb in DATABASES:
-        db_name = cfgdb["db_name"]
+        db_name = cfgdb.get("db_name")
+        if not db_name:
+            continue
         try:
-            # We just switch to the DB. If it doesn't exist, it will be created when we add user/data.
-            # However, create_user needs the db context.
             db.use_db(db_name)
             users = cfgdb.get("users", [])
-
-            # If we want to ensure the DB 'exists' even without users, we might need to insert a dummy collection + doc and delete it?
-            # Or just createCollection.
-            # Requirement says "initialize users and databases".
-            # Creating users implicitly creates the DB context for authentication.
 
             if users:
                 lg.info(f"Processing {db_name=}, {len(users)=} users defined...")
@@ -833,67 +913,48 @@ def run_init(cfg):
                 lg.info(
                     f"No users defined for {db_name}. Accessing DB to ensure connection."
                 )
-                # Maybe explicitly create a collection if needed?
-                # For now just logging.
         except Exception as e:
             lg.error(f"Error processing database {db_name}: {e}")
 
 
-def run_clean_users(cfg):
-    CORE = cfg["core"]
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
+def run_clean_users(db: MongoDbHelper):
     db.clean_orphaned_users()
 
 
-def run_delete_user(cfg, user, target_db):
-    CORE = cfg["core"]
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
+def run_delete_user(db: MongoDbHelper, user: str, target_db: str):
     try:
         db.drop_user(user, target_db)
     except Exception as e:
         lg.error(f"Error deleting user: {e}")
 
 
-def run_delete_db(cfg, target_db):
-    CORE = cfg["core"]
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
-
-    # Safety check?
+def run_delete_db(db: MongoDbHelper, target_db: str):
+    # Safety check
     if target_db in ["admin", "local", "config"]:
         lg.error(f"Cannot delete system database '{target_db}'")
         return
-
-    # Ask for confirmation if running interactively?
-    # For automation scripts, we assume flags are enough.
-    # The requirement didn't specify interaction, just function.
-
     db.drop_database(target_db)
 
 
-def run_dump(cfg, out_dir: Path, db_names: Optional[List[str]]):
+def run_dump(
+    db: MongoDbHelper, out_dir: Path, db_names: Optional[List[str]], compress: bool
+):
     """Dump one or all databases to JSON files."""
-    CORE = cfg["core"]
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
-    db.dump_databases(out_dir=out_dir, db_names=db_names if db_names else None)
+    db.dump_databases(
+        out_dir=out_dir, db_names=db_names if db_names else None, compress=compress
+    )
 
 
 def run_restore(
-    cfg,
+    db: MongoDbHelper,
+    cfg: dict,
     src_dir: Path,
     target_uri: Optional[str],
     db_names: Optional[List[str]],
     drop: bool,
 ):
     """Restore JSON dump files into a target MongoDB instance."""
-    CORE = cfg["core"]
-    # If no target URI supplied, restore back into the source (useful for re-seeding)
-    uri = target_uri or CORE["MONGODB_URI"]
-    db = MongoDbHelper(connection_str=CORE["MONGODB_URI"], connect_timeout_ms=5000)
-    db.connect()
+    uri = target_uri or cfg.get("core", {}).get("MONGODB_URI", "")
     db.restore_databases(
         src_dir=src_dir,
         target_uri=uri,
@@ -903,33 +964,19 @@ def run_restore(
 
 
 def main():
-    # 1. Initialize ConfigHelper and load configuration
-    # ConfigHelper is used to load the configuration,
-    # it will read from config.toml or create a default one if it doesn't exist.
-    helper = ConfigHelper()
-
-    # We load config primarily for the connection URI.
-    # Some commands might override or not need full config validation if we just want connection.
-    # But let's assume valid config is always good to have.
-    try:
-        helper.validate_config()
-        cfg = helper.config
-    except Exception as e:
-        lg.error(f"Config validation failed: {e}")
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(description="MongoDB Helper Script")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # Command: init
+    subparsers.add_parser("init", help="Generate secrets.mongodb.toml only")
+
     # Command: run
-    parser_run = subparsers.add_parser(
+    subparsers.add_parser(
         "run", help="Initialize users and databases from secrets.toml"
     )
 
     # Command: clean-users
-    parser_clean = subparsers.add_parser(
-        "clean-users", help="Clean up orphaned user accounts"
-    )
+    subparsers.add_parser("clean-users", help="Clean up orphaned user accounts")
 
     # Command: delete-user
     parser_del_user = subparsers.add_parser(
@@ -965,6 +1012,11 @@ def main():
         default=None,
         metavar="DIR",
         help="Output directory (default: ./dump_<timestamp>)",
+    )
+    parser_dump.add_argument(
+        "--compress",
+        action="store_true",
+        help="If set, compress the output to a tar.gz file for each database",
     )
 
     # Command: restore
@@ -1002,27 +1054,66 @@ def main():
 
     args = parser.parse_args()
 
+    if not args.command:
+        parser.print_help()
+        return
+
+    if args.command == "init":
+        # Just generates the configuration file if it doesn't exist
+        if CONFIG_FILE.exists():
+            example_file = CONFIG_FILE.with_name("secrets.mongodb.example.toml")
+            if not example_file.exists():
+                _ = ConfigHelper(filepath=example_file)
+                lg.info(
+                    f"'{CONFIG_FILE.name}' already exists. Generated '{example_file.name}' instead."
+                )
+            else:
+                lg.info(
+                    f"'{CONFIG_FILE.name}' and '{example_file.name}' already exist."
+                )
+        else:
+            _ = ConfigHelper()
+        return
+
+    # For other commands, load config
+    helper = ConfigHelper()
+    try:
+        helper.validate_config()
+        cfg = helper.config
+    except Exception as e:
+        lg.error(f"Config validation failed: {e}")
+        sys.exit(1)
+
+    # Establish DB Connection for subsequent commands
+    core_cfg = cfg.get("core", {})
+    mongo_uri = core_cfg.get("MONGODB_URI")
+    if not mongo_uri:
+        lg.error("MONGODB_URI not found in the configuration.")
+        sys.exit(1)
+
+    db = MongoDbHelper(connection_str=mongo_uri, connect_timeout_ms=5000)
+    db.connect()
+
     if args.command == "run":
-        run_init(cfg)
+        run_init(cfg, db)
     elif args.command == "clean-users":
-        run_clean_users(cfg)
+        run_clean_users(db)
     elif args.command == "delete-user":
-        run_delete_user(cfg, args.user, args.db)
+        run_delete_user(db, args.user, args.db)
     elif args.command == "delete-db":
-        run_delete_db(cfg, args.db)
+        run_delete_db(db, args.db)
     elif args.command == "dump":
         out = args.out or Path(f"./dump_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        run_dump(cfg, out_dir=out, db_names=args.db_names)
+        run_dump(db, out_dir=out, db_names=args.db_names, compress=args.compress)
     elif args.command == "restore":
         run_restore(
-            cfg,
+            db=db,
+            cfg=cfg,
             src_dir=args.src,
             target_uri=args.target_uri,
             db_names=args.db_names,
             drop=args.drop,
         )
-    else:
-        parser.print_help()
 
 
 if __name__ == "__main__":
