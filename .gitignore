@@ -6,6 +6,7 @@ postgres/*.dump
 
 **/*.zip
 **/dump_*/
+**/*dump_*/
 ### Project-specific ###
 secrets.toml
 secrets.*.toml

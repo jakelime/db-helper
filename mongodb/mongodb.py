@@ -1103,7 +1103,7 @@ def main():
     elif args.command == "delete-db":
         run_delete_db(db, args.db)
     elif args.command == "dump":
-        out = args.out or Path(f"./dump_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        out = args.out or Path(f"./mgdbdump_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         run_dump(db, out_dir=out, db_names=args.db_names, compress=args.compress)
     elif args.command == "restore":
         run_restore(
