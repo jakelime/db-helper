@@ -1,0 +1,113 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[[package]]
+name = "db-helper"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pymongo" },
+    { name = "tomlkit" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
+    { name = "pymongo", specifier = ">=4.17.0" },
+    { name = "tomlkit", specifier = ">=0.15.0" },
+]
+
+[[package]]
+name = "dnspython"
+version = "2.8.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/dnspython/2.8.0/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/dnspython/2.8.0/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af" },
+]
+
+[[package]]
+name = "psycopg"
+version = "3.3.4"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg/3.3.4/psycopg-3.3.4.tar.gz", hash = "sha256:e21207764952cff81b6b8bdacad9a3939f2793367fdac2987b3aac36a651b5bc" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg/3.3.4/psycopg-3.3.4-py3-none-any.whl", hash = "sha256:b6bbc25ccf05c8fad3b061d9db2ef0909a555171b84b07f29458a447253d679a" },
+]
+
+[package.optional-dependencies]
+binary = [
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
+]
+
+[[package]]
+name = "psycopg-binary"
+version = "3.3.4"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:28b7398fdd19db3232c884fb24550bdfe951221f510e195e233299e4c9b78f97" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:1fbaa292a3c8bb61b45df1ad3da1908ccee7cb889db9425e3557d9e34e2a4829" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:94596f9e7633ee3f6440711d43bb70aa31cc0a46a900ab8b4201a366ace5c9e7" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8c0056529e68dbe9184cd4019a1f3d8f3a4ead2f6fc7a5afcf27d3314edd1277" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2c09aad7051326e7603c14e50636db9c01f78272dc54b3accff03d46370461e6" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:514404ed543efd620c85602b747df2a23cf1241b4067199e1a66f2d2757aaa41" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:46893c26858be12cc49ca4226ed6a60b4bfccadd946b3bebb783a60b38788228" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_ppc64le.whl", hash = "sha256:df1d567fc430f6df15c9fcf67d87685fc49bdb325adc0db5af1adfb2f44eb5c9" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:6b9016b1714da4dd5ecaaa75b82098aa5a0b87854ce9b092e21c27c4ae23e014" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:47c656a8a7ba6eb0cff1801a4caaa9c8bdc12d03080e273aff1c8ac39971a77e" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/psycopg-binary/3.3.4/psycopg_binary-3.3.4-cp314-cp314-win_amd64.whl", hash = "sha256:c37e024c07308cd06cf3ec51bfd0e7f6157585a4d84d1bce4a7f5f7913719bf8" },
+]
+
+[[package]]
+name = "pymongo"
+version = "4.17.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+dependencies = [
+    { name = "dnspython" },
+]
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0.tar.gz", hash = "sha256:70ffa08ba641468cc068cf46c06b34f01a8ce3489f6411309fcb5ceabe6b2fc0" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:ff5aa3f1c7e3f08eb0e7a016c91ba468b1850ccfd63d9b1f12f56350f4974cef" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:e816db649ba5d7de0568cf3a9f287a9dc9aad21cf0ca667ab156a7ef47fca0b0" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:12c4fded3a9f1d6a687e36ebd384ac6d00b9b00de1969aa74048e7051ec2a713" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2db66aa8dd253a0fc1fad3b0d23d5b3993f7ebde02fbbd7727128debf2853675" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-manylinux2014_ppc64le.manylinux_2_17_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:3987e96e7c7be4083d42e8ac2cc6c0d5b78db9973c90fce42ae800b616ca6b20" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-manylinux2014_s390x.manylinux_2_17_s390x.manylinux_2_28_s390x.whl", hash = "sha256:cee36b3c0d0354f880fa7a7fdcdaf2bb5e542c2281e25c1bfadf8cfe21eba7d2" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:320b34457b20bbcc79997801f95d25ce00472915ca5241167242b42c4359e027" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-win32.whl", hash = "sha256:df4a644af9ae132d4bfdb2e9516ea51a615fd881caddfbfbd071cf1354844479" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-win_amd64.whl", hash = "sha256:c797f8a80957134f6dd9690367a0f8f5906d672119af2c6aa55f0c527b656bed" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314-win_arm64.whl", hash = "sha256:68fca71e05ee5da23a8d73cee8379dfb3d26e609a377cae731d742771ed96946" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:b4384700cffc3f1dd98e088bc0072dedf6d7d68a230bb4b972665cf69c071c1e" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:93641192644fa1ee0f34030e774fd31022a27ad11ba22cb1716142231524f8bd" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:75bc3aa5b94fdb7138d357ec6ca61cd97e0c79f4f7f0bd3efe9639b15cc50942" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:50e8f8e23c6df7c6d6929f5e734980b227706e73ee847517c9ba5af90f7fc466" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-manylinux2014_ppc64le.manylinux_2_17_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:15d3f3d732aecac1f8d481bde4029755615639bd3076f258a2147210aec8515a" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-manylinux2014_s390x.manylinux_2_17_s390x.manylinux_2_28_s390x.whl", hash = "sha256:6c5f62862d0f87be481fa1fe8cb811994486773c94a2b61e509285e3f2890763" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:64837adbbd72073301af51bb0fc80e3d7707fe5527cea1033ba0320f0b2f881b" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win32.whl", hash = "sha256:b93b22eedc62598cf5ee9d8c8007a8e9121c50fd88137012d8985500e9dc3151" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win_amd64.whl", hash = "sha256:3689ea34f6b647c7d1e7bdc60fcfb214b2789ed1359a7fb96569c69f50e5f18f" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win_arm64.whl", hash = "sha256:9543d8f84c2e5608565c08ac679774811e6730770d8a645439b073422a4276fb" },
+]
+
+[[package]]
+name = "tomlkit"
+version = "0.15.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/tomlkit/0.15.0/tomlkit-0.15.0.tar.gz", hash = "sha256:7d1a9ecba3086638211b13814ea79c90dd54dd11993564376f3aa92271f5c7a3" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/tomlkit/0.15.0/tomlkit-0.15.0-py3-none-any.whl", hash = "sha256:4dbc8f0fc024412b57ced8757ac7461305126a648ff8c2c807fcb8e133a78738" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2026.2"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/tzdata/2026.2/tzdata-2026.2.tar.gz", hash = "sha256:9173fde7d80d9018e02a662e168e5a2d04f87c41ea174b139fbef642eda62d10" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/tzdata/2026.2/tzdata-2026.2-py2.py3-none-any.whl", hash = "sha256:bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7" },
+]
