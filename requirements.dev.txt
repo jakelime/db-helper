@@ -1,0 +1,12 @@
+# Requirements for development environment
+# Modify this file manually to add/remove dependencies for development purposes.
+
+# Simply type in the name of the package you want to install, one per line. 
+# You can also specify a versions specifications by using the '>=' operator, e.g., 'package>=1.0.0'.
+# Or, django===6.0.*' to specify a specific version of Django.
+
+# All python packaging should be handled by uv
+# `uv add -r requirements.dev.txt` to install all dependencies listed in this file.
+
+ruff
+pytest

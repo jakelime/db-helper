@@ -3,12 +3,23 @@ revision = 3
 requires-python = ">=3.14"
 
 [[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/colorama/0.4.6/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/colorama/0.4.6/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6" },
+]
+
+[[package]]
 name = "db-helper"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pymongo" },
+    { name = "pytest" },
+    { name = "ruff" },
     { name = "tomlkit" },
 ]
 
@@ -16,6 +27,8 @@ dependencies = [
 requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pymongo", specifier = ">=4.17.0" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff", specifier = ">=0.15.20" },
     { name = "tomlkit", specifier = ">=0.15.0" },
 ]
 
@@ -26,6 +39,33 @@ source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/sim
 sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/dnspython/2.8.0/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f" }
 wheels = [
     { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/dnspython/2.8.0/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af" },
+]
+
+[[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/iniconfig/2.3.0/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/iniconfig/2.3.0/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12" },
+]
+
+[[package]]
+name = "packaging"
+version = "26.2"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/packaging/26.2/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/packaging/26.2/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e" },
+]
+
+[[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pluggy/1.6.0/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pluggy/1.6.0/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746" },
 ]
 
 [[package]]
@@ -64,6 +104,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pygments"
+version = "2.20.0"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pygments/2.20.0/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pygments/2.20.0/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176" },
+]
+
+[[package]]
 name = "pymongo"
 version = "4.17.0"
 source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
@@ -92,6 +141,47 @@ wheels = [
     { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win32.whl", hash = "sha256:b93b22eedc62598cf5ee9d8c8007a8e9121c50fd88137012d8985500e9dc3151" },
     { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win_amd64.whl", hash = "sha256:3689ea34f6b647c7d1e7bdc60fcfb214b2789ed1359a7fb96569c69f50e5f18f" },
     { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pymongo/4.17.0/pymongo-4.17.0-cp314-cp314t-win_arm64.whl", hash = "sha256:9543d8f84c2e5608565c08ac679774811e6730770d8a645439b073422a4276fb" },
+]
+
+[[package]]
+name = "pytest"
+version = "9.1.1"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
+]
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pytest/9.1.1/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/pytest/9.1.1/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c" },
+]
+
+[[package]]
+name = "ruff"
+version = "0.15.20"
+source = { registry = "https://artifact.stengglink.com/repository/pypi-proxy/simple" }
+sdist = { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20.tar.gz", hash = "sha256:1416eb04349192646b54de98f146c4f59afe37d0decfc02c3cbbf396f3a28566" }
+wheels = [
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-linux_armv6l.whl", hash = "sha256:00e188c53e499c3c1637f73c91dcf2fb56d576cab76ce1be50a27c4e80e37078" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:9ebd1fd9b9c95fc0bd7b2761aebec1f030013d2e193a2901b224af68fe47251b" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-macosx_11_0_arm64.whl", hash = "sha256:c5b16cdd67ca108185cd36dce98c576350c03b1660a751de725fb049193a0632" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3413bb3c3d2ca6a8208f1f4809cd2dca3c6de6d0b491c0e70847672bde6e6efd" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:bd7ec42b3bb3da066488db093308a69c4ac5ee6d2af333a86ba6e2eb2e7dd44b" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e1a36ad0eb77fba9aabfb69ede54de6f376d04ac18ebea022847046d340a8267" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:b6df3b1e4610432f0386dba04d853b5f08cbbc903410c6fcc02f620f05aff53c" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:e89f198a1ea6ef0d727c1cf16088bc91a6cb0ab947dedc966715691647186eae" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:309809086c2acb67624950a3c8133e80f32d0d3e27106c0cd60ff26657c9f24b" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-manylinux_2_31_riscv64.whl", hash = "sha256:2d2374caa2f2c2f9e2b7da0a50802cfb8b79f55a9b5e49379f564544fbf56487" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:a1ed17b65293e0c2f22fc387bc13198a5de94bf4429589b0ff6946b0feaf21a3" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:f701305e66b38ea6c91882490eb73459796808e4c6362a1b765255e0cdcd4053" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-musllinux_1_2_i686.whl", hash = "sha256:5b9c0c367ad8e5d0d5b5b8537864c469a0a0e55417aadfbeca41fa61333be9f4" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:01cc00dd58f0df339d0e902219dd53990ea99996a0344e5d9cc8d45d5307e460" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-win32.whl", hash = "sha256:ed65ef510e43a137207e0f01cfcf998aeddb1aeeda5c9d35023e910284d7cf21" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-win_amd64.whl", hash = "sha256:a525c81c70fb0380344dd1d8745d8cc1c890b7fc94a58d5a07bd8eb9557b8415" },
+    { url = "https://artifact.stengglink.com/repository/pypi-proxy/packages/ruff/0.15.20/ruff-0.15.20-py3-none-win_arm64.whl", hash = "sha256:2f5b2a6d614e8700388806a14996c40fab2c47b819ef57d790a34878858ed9ca" },
 ]
 
 [[package]]
