@@ -38,6 +38,18 @@ uv run python mongodb.py delete-user --user <username> --db <database>
 uv run python mongodb.py delete-db --db <database>
 ```
 
+### `duplicate-db` — Duplicate a database within the same instance
+
+Copies all collections/documents from one database to another on the same MongoDB
+server (e.g. cloning `prod_db` into `prod_db_backup`). Indexes are not copied.
+
+```bash
+uv run python mongodb.py duplicate-db --src-db <database1> --dst-db <database2>
+
+# Clean duplicate: drop each destination collection before copying
+uv run python mongodb.py duplicate-db --src-db <database1> --dst-db <database2> --drop
+```
+
 ### `dump` — Export data for migration
 
 Dumps one or all non-system databases to JSON files. Each collection is saved as

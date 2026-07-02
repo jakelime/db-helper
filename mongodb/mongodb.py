@@ -713,9 +713,14 @@ class MongoDbHelper(MongoDbHelperTemplate):
             db_obj = self.client[db_name]
 
             try:
+                # Include both regular collections and timeseries collections
+                # (queried via their friendly name). Exclude internal system.*
+                # collections (e.g. system.buckets.<name>, system.views) which
+                # cannot be restored as plain collections.
                 collections = db_obj.list_collection_names(
-                    filter={"type": "collection"}
+                    filter={"type": {"$in": ["collection", "timeseries"]}}
                 )
+                collections = [c for c in collections if not c.startswith("system.")]
             except pymgErrors.OperationFailure as e:
                 lg.warning(
                     f"  [{db_name}] Cannot list collections (permission denied): {e.details.get('errmsg', e)}. Skipping."
@@ -767,6 +772,82 @@ class MongoDbHelper(MongoDbHelperTemplate):
 
         lg.info("Dump complete.")
 
+    def duplicate_database(
+        self,
+        src_db_name: str,
+        dst_db_name: str,
+        drop_before_copy: bool = False,
+    ) -> None:
+        """
+        Duplicate a database within the same MongoDB server/instance.
+
+        Copies all collections (and their documents) from src_db_name into
+        dst_db_name. Indexes are not copied automatically; MongoDB's
+        copyDatabase command was removed in server versions 4.2+, so
+        this reads each collection and re-inserts documents into the target.
+
+        Parameters
+        ----------
+        src_db_name : str
+            Name of the source database to copy from.
+        dst_db_name : str
+            Name of the destination database to copy into.
+        drop_before_copy : bool
+            If True, drop each destination collection before inserting
+            (clean copy). Otherwise documents are appended to any existing data.
+        """
+        if src_db_name == dst_db_name:
+            lg.error("Source and destination database names must differ.")
+            return
+        if dst_db_name in self.SYSTEM_DBS:
+            lg.error(f"Refusing to duplicate into system database '{dst_db_name}'.")
+            return
+
+        src_db = self.client[src_db_name]
+        dst_db = self.client[dst_db_name]
+
+        try:
+            collections = src_db.list_collection_names(filter={"type": "collection"})
+        except pymgErrors.OperationFailure as e:
+            lg.error(
+                f"[{src_db_name}] Cannot list collections (permission denied): {e.details.get('errmsg', e)}"
+            )
+            return
+
+        lg.info(
+            f"Duplicating '{src_db_name}' -> '{dst_db_name}' ({len(collections)} collection(s))..."
+        )
+
+        for coll_name in collections:
+            try:
+                docs = list(src_db[coll_name].find())
+            except pymgErrors.OperationFailure as e:
+                lg.warning(
+                    f"  -> {coll_name}: skipped (permission denied): {e.details.get('errmsg', e)}"
+                )
+                continue
+
+            dst_coll = dst_db[coll_name]
+            if drop_before_copy:
+                dst_coll.drop()
+
+            if not docs:
+                lg.info(f"  -> {coll_name}: 0 document(s), skipping insert.")
+                continue
+
+            try:
+                result = dst_coll.insert_many(docs, ordered=False)
+                lg.info(
+                    f"  -> {coll_name}: copied {len(result.inserted_ids)}/{len(docs)} document(s)."
+                )
+            except pymgErrors.BulkWriteError as e:
+                inserted = e.details.get("nInserted", 0) if e.details else 0
+                lg.warning(
+                    f"  -> {coll_name}: partial copy {inserted}/{len(docs)} document(s) (some inserts failed, e.g. duplicate keys)."
+                )
+
+        lg.info("Duplicate complete.")
+
     def restore_from_dir(self, db_src: Path, target_db, drop_before_restore: bool):
         json_files = list(db_src.glob("*.json"))
         lg.info(
@@ -803,6 +884,12 @@ class MongoDbHelper(MongoDbHelperTemplate):
     def restore_docs(
         self, target_db, coll_name: str, docs: list, drop_before_restore: bool
     ):
+        if coll_name.startswith("system."):
+            lg.warning(
+                f"    -> {coll_name}: skipping internal system collection (not restorable)."
+            )
+            return
+
         if not docs:
             lg.info(f"    -> {coll_name}: 0 documents, skipping.")
             return
@@ -812,10 +899,23 @@ class MongoDbHelper(MongoDbHelperTemplate):
             coll.drop()
             lg.info(f"    -> {coll_name}: dropped (clean restore).")
 
-        result = coll.insert_many(docs, ordered=False)
-        lg.info(
-            f"    -> {coll_name}: inserted {len(result.inserted_ids)}/{len(docs)} document(s)."
-        )
+        try:
+            result = coll.insert_many(docs, ordered=False)
+            lg.info(
+                f"    -> {coll_name}: inserted {len(result.inserted_ids)}/{len(docs)} document(s)."
+            )
+        except pymgErrors.BulkWriteError as e:
+            inserted = e.details.get("nInserted", 0) if e.details else 0
+            first_err = (
+                e.details.get("writeErrors", [{}])[0].get("errmsg", str(e))
+                if e.details
+                else str(e)
+            )
+            lg.warning(
+                f"    -> {coll_name}: inserted {inserted}/{len(docs)} document(s), some failed: {first_err}"
+            )
+        except pymgErrors.PyMongoError as e:
+            lg.error(f"    -> {coll_name}: failed to insert documents: {e}")
 
     def restore_databases(
         self,
@@ -945,6 +1045,13 @@ def run_dump(
     )
 
 
+def run_duplicate_db(db: MongoDbHelper, src_db: str, dst_db: str, drop: bool):
+    """Duplicate a database within the same MongoDB instance."""
+    db.duplicate_database(
+        src_db_name=src_db, dst_db_name=dst_db, drop_before_copy=drop
+    )
+
+
 def run_restore(
     db: MongoDbHelper,
     cfg: dict,
@@ -992,6 +1099,24 @@ def main():
         "delete-db", help="Delete a specific database"
     )
     parser_del_db.add_argument("--db", required=True, help="Database name to delete")
+
+    # Command: duplicate-db
+    parser_dup_db = subparsers.add_parser(
+        "duplicate-db",
+        help="Duplicate a database within the same MongoDB instance",
+    )
+    parser_dup_db.add_argument(
+        "--src-db", dest="src_db", required=True, help="Source database name"
+    )
+    parser_dup_db.add_argument(
+        "--dst-db", dest="dst_db", required=True, help="Destination database name"
+    )
+    parser_dup_db.add_argument(
+        "--drop",
+        action="store_true",
+        default=False,
+        help="Drop each destination collection before copying (clean duplicate).",
+    )
 
     # Command: dump
     parser_dump = subparsers.add_parser(
@@ -1102,6 +1227,8 @@ def main():
         run_delete_user(db, args.user, args.db)
     elif args.command == "delete-db":
         run_delete_db(db, args.db)
+    elif args.command == "duplicate-db":
+        run_duplicate_db(db, args.src_db, args.dst_db, args.drop)
     elif args.command == "dump":
         out = args.out or Path(f"./mgdbdump_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         run_dump(db, out_dir=out, db_names=args.db_names, compress=args.compress)
